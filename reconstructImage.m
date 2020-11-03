@@ -78,23 +78,25 @@ I2 = index2(index13);
 
 
 %% Create the image
-% bins to combine the photons
-bins = 0 : 8 : 4096;
+% Spatial bins to combine the photons
+Sbins = 0 : 8 : 4096;
+% Spatial bins to combine the photons
+Tbins = 0 : 8 : 4096;
 % Create an XY image from the data in fifo(1) and fifo(2)
 % Actually don't create the image, just get the indices of the bin elements
 % for the input arrays
 [~, ~, ~, binX, binY] = ...
-    histcounts2(FIFO(2).microT(I2), FIFO(3).microT(I3), bins, bins);
+    histcounts2(FIFO(2).microT(I2), FIFO(3).microT(I3), Sbins, Sbins);
 
 
 % Create a 3D array to hold the time decay data. Use 16-bit unsigned
 % integer
-XYZimage = zeros(numel(bins) * [1 1 1], 'uint16');
+XYZimage = zeros([numel(Sbins) * [1 1] numel(Tbins)], 'uint16');
 
 % Convert the microtime into an addressable bin coordinate
-binZ = bitshift(FIFO(1).microT(I1), -log2(bins(2))) + 1;
+binZ = bitshift(FIFO(1).microT(I1), -log2(Tbins(2))) + 1;
 % TAC bin range in nanoseconds
-tac = linspace(0, FIFO(1).set.SP.SP_TAC_R * 1e9, numel(bins) - 1);
+tac = linspace(0, FIFO(1).set.SP.SP_TAC_R * 1e9, numel(Tbins) - 1);
 
 % Run through every photon and throw it into the right 3D histogram bin
 for i = 1 : numel(binX)
@@ -111,8 +113,8 @@ TPimage = reshape(XYZimage, ...
 TPimage = double(TPimage);
 fit_index = find(sum(TPimage) > 10);
 
-% Get the x increment
-xincr = tac(end) / numel(bins);             % nanoseconds per bin
+% Get the time increment
+xincr = tac(end) / numel(Tbins);             % nanoseconds per bin
 % Create a simulated prompt as we don't have one currently.
 promptSigma = 0.05;
 prompt = histc(tac(end) / 2 + promptSigma * randn(10000, 1), tac);
@@ -120,14 +122,17 @@ prompt = prompt / sum(prompt);
 prompt = prompt(prompt > max(prompt) / 100);
 
 % Get the start, where the transient starts rising
-start = 195;
+start = 245;
 % Get the fit_start, where the fitting should start
 fit_start = 6;
 % Get the fit_end, where the fit should end
 fit_end = size(TPimage, 1) - start - 2;
 
 [paramsLMA, paramsRLD, fittedLMA] = ...
-    mxSlimCurve(TPimage(start : end, fit_index), prompt, xincr, fit_start);
+    mxSlimCurve(TPimage(start : end, fit_index), ...
+                prompt, ...
+                xincr, ...
+                fit_start);
 
 % Store the fitted results
 fImage = zeros(size(fittedLMA, 1), size(TPimage, 2));
