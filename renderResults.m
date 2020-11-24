@@ -200,8 +200,8 @@ set(hf, 'WindowButtonDownFcn', @mouseclick);
 stopped = false;
 
 %% Save the maximum projection image as a 16-bit tiff
-fnames{5} = [fnames{4}(1 : end - 3), 'tiff'];
-imwrite(uint16(image1), fnames{5})
+IMname = [ICSname(1 : end - 3), 'tiff'];
+imwrite(uint16(image1), IMname)
 
 function spinner_Callback(~)
 global hSpin
@@ -342,16 +342,13 @@ for i = 1 : size(fParam, 3)
 end
 
 % Draw the decay and fit
-set(hl.ax2(1), 'XData', tac, ...
-               'YData', squeeze(XYZimage(rowIn, colIn, 1 : end - 1)))
-set(hl.ax2(2), 'XData', ftac, ...
-               'YData', squeeze(fImage(rowIn, colIn, 1 : end - 1)))
+set(hl.ax2(1), 'XData', tac, 'YData', squeeze(XYZimage(rowIn, colIn, :)))
+set(hl.ax2(2), 'XData', ftac, 'YData', squeeze(fImage(rowIn, colIn, :)))
 
 set(ha(2), 'XLim', tac([1, end]))
 
 % Draw the residuals
-set(hl.ax3(1), 'XData', ftac, ...
-               'YData', squeeze(rImage(rowIn, colIn, 1 : end - 1)))
+set(hl.ax3(1), 'XData', ftac, 'YData', squeeze(rImage(rowIn, colIn, :)))
 
 set(ha(3), 'XLim', tac([1, end]))
 

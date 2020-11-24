@@ -1,33 +1,24 @@
 % Load the IRF data
 %reconstructImage;
+global pixHist
+global pixIndex
 
-%filename = '~/experiments/2020/201103_IRF/diode_mag_1670Amp_10MHz_2998V_29kHz_3.5mmIris_1800s_m1.spc';
-filename = '~/experiments/2020/201103_IRF/NKT_mag_74perc_9-75MHz_2998V_33kHz_3.5mmIris_1800s_m1.spc';
+filename = '~/experiments/2020/201103_IRF/diode_mag_1670Amp_10MHz_2998V_29kHz_3.5mmIris_1800s_m1.spc';
 input.frameTime = Inf;
-
-% Model type: gauss, exGauss, shift
-input.type = 'gauss';
 input.Xstart = 1168;
 input.Xend = 4008;
 input.XYstep = 8;
 input.Ystart = 846;
 input.Yend = 3802;
-input.Tstart0 = 1800;
-input.Tend0 = 3799;
-% NKT 9.75MHz
-input.TstartIRF = 1980;
-input.TendIRF = 2159;
-%input.Tstart = 1535;
-%input.Tend = 1634;
-input.Tstart = input.TstartIRF;
-input.Tend = input.TendIRF;
+input.Tstart0 = 1500;
+input.Tend0 = 3500;
+input.Tstart = 1535;
+input.Tend = 1634;
 input.Tstep = 1;
 input.saveIRF = false;
-input.IRFfile = [filename(1 : end - 7), '.', input.type, '.mat']; %'~/experiments/2020/201103_IRF/diode_mag_167Amp_10MHz_2998V_3.5mmIris.mat';
+input.IRFfile = '~/experiments/2020/201103_IRF/diode_mag_167Amp_10MHz_2998V_3.5mmIris.exg.mat';
 input.IRFicsFile = [input.IRFfile(1 : end - 3), 'ics'];
 input.fitFile = [input.IRFfile(1 : end - 3), 'png'];
-input.IRFrawPeakFile = [input.IRFfile(1 : end - 3), 'rawPeak.png'];
-input.IRFcorrPeakFile = [input.IRFfile(1 : end - 3), 'corrPeak.png'];
 
 % Read the IRF dataset
 [XYZimage, param] = SPC2image(filename, '', input);
@@ -40,7 +31,7 @@ sensorIm = dip_image(image1);
 sensor = threshold(sensorIm, 'background');
 % Sensor needs removing areas around the edges, where the signal is a bit
 % weak
-sensor = erosion(sensor, 11);
+sensor = erosion(sensor);
 %sensor = dip_growregions(erosion(sensor), [], [], 2, 3, 'low_first');
 % Label all regions
 %sensorLab = label(sensor);
@@ -56,31 +47,160 @@ Y = yy(size(sensor), 'corner');
 Xmat = double(X) + 1;
 Ymat = flipud(double(Y)) + 1;
 
-%% Find the peak positions of the IRF
-peakPos = IRFpeakFind(XYZimage, sensor, input);
+% Distance from center
+%Cdist = sqrt((X - sensorMeas.Center(1)) .^ 2 + (Y - sensorMeas.Center(2)) .^ 2);
+% Sensor gate
+%sensorGate = Cdist < sensorMeas.Radius(3);
+sensorGate = flipud(logical(sensor));
 
-%% Get rid of peak position outliers
-peakPosNO = peakPos;
-peakPosNO(isoutlier(peakPos, 'movmedian', 9, 'ThresholdFactor', 5)) = NaN;
+%% Run the lifetime fit for pixels with more that 10 photons
+%  reshape XYZ image into an array where the first dimension is the time
+%  and the other dimensions are all the pixels
+TPimage = reshape(XYZimage, ...
+                  size(XYZimage, 1) * size(XYZimage, 2), ...
+                  size(XYZimage, 3))';
+clear('XYZimage')
+% Extract the IRFs from the sensor only
+IRFtraces = double(TPimage(:, sensorGate(:)));
+clear('TPimage')
+% Calculate the average IRF across the sensor
+avgTrace = mean(IRFtraces, 2);
+
+% Create matrix of shifts
+% IRFshift = NaN(size(image1));
+
+% Run through the pixels of the sensor
+sensorPix = find(sensorGate)';
+
+%% Find the position of the peak in each pixel based on the fit of the
+%  average IRF trace
+% Find the maximum in each pixel
+pixHist = avgTrace;
+[h0, mu0] = max(pixHist);
+sigma0 = 3;
+tau0 = 8;
+offset0 = median(pixHist);
+% These are the initial guesses for the fit
+param0 = [h0 * tau0 * exp(1), mu0, sigma0, tau0, offset0];
+
+% Create an index of the bins
+pixIndex = (1 : size(IRFtraces, 1))';
+
+% Run the fit
+[h0, mu0, sigma0, tau0, offset0] = exgfit(param0);
+tau0 = 1;     % The decay is better fit by a shorter tau
+sigmaAvg = ones(100, 1) * sigma0;
+sigma01 = sigma0;
+tauAvg = ones(100, 1) * tau0;
+tau01 = tau0;
+Fit.h = NaN(size(sensorGate));  Fit.h(sensorGate) = h0;
+Fit.mu = Fit.h;                 Fit.mu(sensorGate) = mu0;
+Fit.sigma = Fit.h;              Fit.sigma(sensorGate) = sigma0;
+Fit.tau = Fit.h;                Fit.tau(sensorGate) = tau0;
+Fit.offset = Fit.h;             Fit.offset(sensorGate) = offset0;
+Fit.peakPos = Fit.h;
+Fit.exitFlag = logical(size(Fit.h));
+param0 = [h0 * tau0 * exp(1), mu0, sigma0, tau0, offset0];
+param01 = param0;
+
+%% Go through all the pixels and find the shift between the average IRF and
+%  the pixel IRF
+% Create a waitbar that's larger than normal
+h = waitbar(0, 'Correcting IRF shifts...');
+h.Position(4) = h.Position(4) * 1.3;
+% Record the time of the analysis start
+tic;
+for i = 1 : numel(sensorPix)
+    % Update the waitbar every 100 pixels
+    if ~mod(i, 100)
+        if ishandle(h)
+            waitbar(i / numel(sensorPix), ...
+                    h, ...
+                    {'Correcting IRF shifts...', ...
+                     sprintf('Elapsed time %s', duration(0, 0, toc)), ...
+                     sprintf('Remaining time %s', ...
+                             duration(0, 0, ...
+                                      toc * (numel(sensorPix) - i) / i))})
+        end
+    end
+    % Get the current pixel index
+    pixIn = sensorPix(i);
+    % Get the pixel histogram
+    pixHist = IRFtraces(:, i);
+    % Find the maximum in each pixel
+    [h01, param01(2)] = max(pixHist);
+    % These are the initial guesses for the fit
+    param01(1) = h01 * tau01 * exp(1);
+    param01(3) = sigma01;
+    param01(4) = tau01;
+    % Run the fit
+    [fh, fmu, fsigma, ftau, foffset, ~, fval01] = exgfit(param01);
+    [h02, mu02, sigma02, tau02, offset02, ~, fval02] = exgfit(param0);
+    % Check which fit is better
+    if fval01 < fval02
+        Fit.h(pixIn) = fh;
+        Fit.mu(pixIn) = fmu;
+        Fit.sigma(pixIn) = fsigma;
+        Fit.tau(pixIn) = ftau;
+        Fit.offset(pixIn) = foffset;
+    else
+        Fit.h(pixIn) = h02;
+        Fit.mu(pixIn) = mu02;
+        Fit.sigma(pixIn) = sigma02;
+        Fit.tau(pixIn) = tau02;
+        Fit.offset(pixIn) = offset02;
+    end
+    in = mod(i - 1, 100) + 1;
+    sigmaAvg(in) = Fit.sigma(pixIn);
+    sigma01 = mean(sigmaAvg);
+    tauAvg(in) = Fit.tau(pixIn);
+    tau01 = mean(tauAvg);
+    % Model the curve and fin its peak
+    IRFmodel = exGauss(pixIndex, ...
+                       Fit.h(pixIn), ...
+                       Fit.mu(pixIn), ...
+                       Fit.sigma(pixIn), ...
+                       Fit.tau(pixIn), ...
+                       Fit.offset(pixIn));
+    %Fit.peakPos(pixIn) = ...
+    % Find the peak and its value
+    [p, v] = dip_subpixelmaxima(dip_image(IRFmodel), ...
+                                dip_image(IRFmodel > 0.1 * max(IRFmodel)), ...
+                                'gaussian');
+	% Store the peak position
+	Fit.peakPos(pixIn) = p(v == max(v)) + 1;
+    % Calculate the shift of the IRF in the pixel compared to the average
+    % IRF
+    %IRFshift(Ymat(pixIn), Xmat(pixIn)) = ...
+    %    findshift(avgTrace, squeeze(IRFtraces(i - 1, :)), 'iter');
+end
+delete(h)
+
+%% Calculate the shift differential
+% Position of the average peak
+%pos0 = dip_subpixelmaxima(dip_image(avgTrace), ...
+%                          dip_image(avgTrace > 0.1 * max(avgTrace)), ...
+%                          'gaussian') + 1;
+IRFshift = Fit.peakPos - mean(Fit.peakPos(:), 'omitnan');
 
 %% Fit the IRFshift the with a 2D polynomials and get the residuals
 % Create a figure
 figure('Units', 'Normalized', 'Outerposition', [0 0 1 1])
 % XY coordinates
-XYcoord = [Xmat(~isnan(peakPosNO)), Ymat(~isnan(peakPosNO))];
+XYcoord = [Xmat(~isnan(IRFshift)), Ymat(~isnan(IRFshift))];
 % Fitted shifts
-Zshifts = peakPos(~isnan(peakPosNO));
+Zshifts = IRFshift(~isnan(IRFshift));
 % Number of models
 nrModels = 6;
 % axes handles
-ha = zeros(6, nrModels);
+ha = zeros(3, nrModels);
 % histogram handles
 hh = zeros(1, nrModels);
 % IRF shift models
 shiftModel = {'poly22', 'poly33', 'poly44', 'poly55', 'lowess'};
 % IRF offset matrix
 for i = 1 : (nrModels - 1)
-    MCPshift.(shiftModel{i}).offset = zeros(size(peakPos));
+    MCPshift.(shiftModel{i}).offset = zeros(size(IRFshift));
     MCPshift.(shiftModel{i}).model = sfit;
     MCPshift.(shiftModel{i}).error.mean = 0;
     MCPshift.(shiftModel{i}).error.std = 0;
@@ -89,7 +209,7 @@ for i = 1 : (nrModels - 1)
     elseif i == 2
         MCPshift.(shiftModel{i}).name = '3rd Degree 2D Polynomial';
     elseif i == nrModels - 1
-        MCPshift.(shiftModel{i}).name = 'Linear Smoothing regression';
+        MCPshift.(shiftModel{i}).name = 'Linear smooting regression';
     else
         MCPshift.(shiftModel{i}).name = ...
             sprintf('%dth Degree 2D Polynomial', i + 1);
@@ -98,12 +218,12 @@ end
 for i = 1 : nrModels
     if i == 1
         ha(1, 1) = subplot(3, nrModels, 1);
-        surf(peakPos, 'EdgeColor', 'none')
+        surf(IRFshift, 'EdgeColor', 'none')
         zl1 = get(ha(1, 1), 'ZLim');
         cl1 = get(ha(1, 1), 'CLim');
         title('IRF Shift')
         ha(3, 1) = subplot(3, nrModels, 2 * nrModels + 1);
-        hh(1) = histogram(peakPosNO(~isnan(peakPosNO)));
+        hh(1) = histogram(IRFshift(~isnan(IRFshift)));
     else
         % surface fit
         sf = fit(XYcoord, Zshifts, shiftModel{i - 1}, 'Normalize', 'on');
@@ -115,17 +235,17 @@ for i = 1 : nrModels
         plot(sf)%, [Xmat(~isnan(IRFshift)), Ymat(~isnan(IRFshift))], IRFshift(~isnan(IRFshift)))
         hold on
         % Plot the surface of the calculated IRF shift
-        surf(peakPos, 'EdgeColor', 'none')
+        surf(IRFshift, 'EdgeColor', 'none')
         % Give a title to the plot
         title(MCPshift.(shiftModel{i - 1}).name)
         % Create a plot of the residuals
         ha(2, i) = subplot(3, nrModels, i + nrModels);
         %plot(sf)
         % fit and data difference
-        dShifts = sf(Xmat(~isnan(peakPosNO)), ...
-                     Ymat(~isnan(peakPosNO))) - Zshifts;
-        dImage = NaN(size(peakPos));
-        dImage(~isnan(peakPosNO)) = dShifts;
+        dShifts = sf(Xmat(~isnan(IRFshift)), Ymat(~isnan(IRFshift))) - ...
+                  Zshifts;
+        dImage = NaN(size(IRFshift));
+        dImage(~isnan(IRFshift)) = dShifts;
         surf(dImage, 'EdgeColor', 'none')
         title('Residual')
         % Calculate the errors of the fit
@@ -189,18 +309,15 @@ for i = 1 : numel(hh)
 end
 
 print(gcf, input.fitFile, '-dpng')
+save(input.IRFfile, 'MCPshift', 'input', 'Fit')
 
 %% Create shift masks
-hf = zeros(1, nrModels + 2);
+hf = zeros(1, nrModels);
 hs = hf;
 cl = [Inf, -Inf];
 input.MCPfitFile = cell(1, nrModels - 1);
 for i = 1 : (nrModels - 1)
-    hf(i) = figure('Units', 'pixels', ...
-                   'Position', [10, 10, 800, 700], ...
-                   'PaperUnits', 'centimeter', ...
-                   'PaperPosition', [0 0 24, 21], ...
-                   'PaperSize', [24, 21]);
+    hf(i) = figure;
     mcpshift = MCPshift.(shiftModel{i}).offset;
     mcpshift(~sensorGate) = NaN;
     ha(4, i) = axes('FontSize', 16);
@@ -235,36 +352,6 @@ for i = 1 : (nrModels - 1)
     print(hf(i), input.MCPfitFile{2, i}, '-dpng')
 end
 
-%% Create a figure of the IRF peak position
-hf(end - 1) = figure('Units', 'pixels', ...
-                     'Position', [10, 10, 800, 700], ...
-                     'PaperUnits', 'centimeter', ...
-                     'PaperPosition', [0 0 24, 21], ...
-                     'PaperSize', [24, 21]);
-ha(6, 1) = axes;
-% Calculate center value and median absolute deviation
-peakPosMd = median(peakPos(:) * bin2ps, 'omitnan');
-peakPosMad = mad(peakPos(:) * bin2ps);
-% Create the plot
-hs(end - 1) = surf(peakPos * bin2ps - peakPosMd, 'EdgeColor', 'none');
-view(2)
-ha(6, 2) = colorbar;
-box on
-axis equal
-set(ha(6, 1), 'FontSize', 16)
-title('IRF Peak Position (Raw)')
-xlabel('X pixel');
-ylabel('Y pixel');
-set(ha(6, 1), 'XLim', [0, size(image1, 2)]);
-set(ha(6, 1), 'YLim', [0, size(image1, 1)]);
-set(ha(6, 1), 'CLim', 5 * peakPosMad * [-1, 1]);
-set(get(ha(6, 2), 'Label'), 'String', 'IRF Timing Skew [ps]', ...
-                            'FontSize', get(ha(6, 1), 'FontSize'));
-print(hf(end - 1), input.IRFrawPeakFile, '-dpng')
-
-% Save the IRF file
-save(input.IRFfile, 'MCPshift', 'input')
-
 %% Run the MCP shift correction on the same IRF data to obtain a corrected
 %  IRF
 % Update the Tstart and Tend
@@ -272,10 +359,6 @@ input.Tstart = input.Tstart0;
 input.Tend = input.Tend0;
 % Read the IRF dataset, this time correcting the MCP shift
 XYZimage = SPC2image(filename, input.IRFfile, input);
-% Find the peak positions of the IRF
-peakPos = IRFpeakFind(XYZimage(:, :, (input.TstartIRF : input.TendIRF) - input.Tstart), ...
-                      sensor, ...
-                      input);
 % Gate out the sensor part of the XYZ image stack
 XYZimage(~repmat(sensorGate, [1 1 size(XYZimage, 3)])) = 0;
 % Use a X and Y sum projections of the XYZ stack to extract the IRF
@@ -283,38 +366,6 @@ IRF = sum(sum(double(XYZimage), 1), 2);
 % Scale IRF to UINT16
 IRF = IRF / max(IRF) * double(intmax('uint16'));
 % TAC bin width
-binWidth = diff(param.tac([1, 2]));
+binWidth = 1e3 * diff(param.tac([1, 2]));
 % Save the IRF
 saveIRF(IRF, [1 1], input.IRFicsFile, binWidth)
-
-% Save the IRF file
-save(input.IRFfile, '-append', 'IRF')
-
-
-
-%% Create a figure of the IRF peak position
-hf(end) = figure('Units', 'pixels', ...
-                     'Position', [10, 10, 800, 700], ...
-                     'PaperUnits', 'centimeter', ...
-                     'PaperPosition', [0 0 24, 21], ...
-                     'PaperSize', [24, 21]);
-ha(6, 3) = axes;
-% Calculate center value and median absolute deviation
-peakPosMd = median(peakPos(:) * bin2ps, 'omitnan');
-peakPosMad = mad(peakPos(:) * bin2ps);
-% Create the plot
-hs(end) = surf(peakPos * bin2ps - peakPosMd, 'EdgeColor', 'none');
-view(2)
-ha(6, 4) = colorbar;
-box on
-axis equal
-set(ha(6, 3), 'FontSize', 16)
-title('IRF Peak Position (Corrected)')
-xlabel('X pixel');
-ylabel('Y pixel');
-set(ha(6, 3), 'XLim', [0, size(image1, 2)]);
-set(ha(6, 3), 'YLim', [0, size(image1, 1)]);
-set(ha(6, 3), 'CLim', get(ha(6, 1), 'CLim'))
-set(get(ha(6, 4), 'Label'), 'String', 'IRF Timing Skew [ps]', ...
-                            'FontSize', get(ha(6, 3), 'FontSize'));
-print(hf(end), input.IRFcorrPeakFile, '-dpng')
