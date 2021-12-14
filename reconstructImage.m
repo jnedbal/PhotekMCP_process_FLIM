@@ -1,4 +1,4 @@
-
+ 
 % Set some global variables
 global XYZimage % image stack
 global tac      % TAC bin range
@@ -19,6 +19,8 @@ tic
 % Get the IRF
 IRFfile = ['/home/jakub/experiments/2020/201103_IRF/', ...
            'NKT_mag_74perc_9-75MHz_2998V_33kHz_3.5mmIris_1800s.gauss.mat'];
+IRFfile = ['/home/jakub/experiments/2020/201211_IRF/60xlowMag/', ...
+           '11-1MHz_71.5perc_55kHz_1800s_A.gauss.mat'];
 load(IRFfile);
 
 %% Load FIFO data
@@ -38,13 +40,25 @@ if isequal(filename, 0)
     return
 end
 
+% Choose the frame time
+ft = inputdlg('Choose frame time', 'reconstructImage', 1, {'Inf'});
+if ~isempty(ft)
+    ft = str2double(ft{1});
+    if ~isnan(ft)
+        input.frameTime = ft;
+    end
+else
+    return
+end
+
 %% Load the data file
 input.Tstart = input.Tstart0;
 input.Tend = input.Tend0;
 
-[XYZimage, param] = SPC2image(fullfile(pathname, filename), ...
-                              IRFfile, ...
-                              input);
+[XYZimage, param, imageStack] = ...
+    SPC2image(fullfile(pathname, filename), ...
+              IRFfile, ...
+              input);
 
 % % Build a cell of expected filenames
 % fnames = cell(1, 3);

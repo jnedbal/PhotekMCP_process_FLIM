@@ -2,21 +2,39 @@
 %reconstructImage;
 
 %filename = '~/experiments/2020/201103_IRF/diode_mag_1670Amp_10MHz_2998V_29kHz_3.5mmIris_1800s_m1.spc';
-filename = '~/experiments/2020/201103_IRF/NKT_mag_74perc_9-75MHz_2998V_33kHz_3.5mmIris_1800s_m1.spc';
+%filename = '~/experiments/2020/201103_IRF/NKT_mag_74perc_9-75MHz_2998V_33kHz_3.5mmIris_1800s_m1.spc';
+%filename = '~/experiments/2020/201130_IRF_NKT/11.1MHz_71perc_NKT_f100mm_lens_1800s_55kHz_A_m1.spc';
+%filename = '~/experiments/2020/201204_IRF/NKT_11-14MHz_69perc_f100mm_50kHz_lowMag_60x_1800s_A_m1.spc';
+%filename = '/home/jakub/experiments/2020/201211_IRF/90xlowMag/11-1MHz_71.7perc_55kHz_1800s_A_m1.spc';
+%filename = '/home/jakub/experiments/2020/201211_IRF/60xlowMag/11-1MHz_71.5perc_55kHz_1800s_A_m1.spc';
+%filename = '/home/jakub/experiments/2020/201211_IRF/60xhighMag/11-1MHz_71.5perc_60kHz_1800s_A_m1.spc';
+%filename = '/home/jakub/experiments/2020/201211_IRF/90xhighMag/11-1MHz_72.5perc_60kHz_1800s_A_m1.spc';
+filename = '/home/jakub/experiments/2021/210903_IRF/MCP/loMag_FITC/11-14MHz_70-4perc_60x_loMag_f100mm_80kHz_FITC_filter_FITC_1800s_A_m1.spc';
 input.frameTime = Inf;
 
 % Model type: gauss, exGauss, shift
 input.type = 'gauss';
-input.Xstart = 1168;
+input.Xstart = 1148;
 input.Xend = 4008;
 input.XYstep = 8;
-input.Ystart = 846;
+input.Ystart = 656;
 input.Yend = 3802;
+% NKT 9.75MHz lowMag
 input.Tstart0 = 1800;
 input.Tend0 = 3799;
-% NKT 9.75MHz
 input.TstartIRF = 1980;
 input.TendIRF = 2159;
+% NKT 11.1MHz lowMag
+input.Tstart0 = 2900;
+input.Tend0 = 3799;
+input.TstartIRF = 3000;
+input.TendIRF = 3079;
+% NKT 11.1MHz highMag
+input.Tstart0 = 2900;
+input.Tend0 = 3799;
+input.TstartIRF = 3085;
+input.TendIRF = 3164;
+
 %input.Tstart = 1535;
 %input.Tend = 1634;
 input.Tstart = input.TstartIRF;
@@ -38,6 +56,7 @@ image1 = sum(XYZimage, 3);
 sensorIm = dip_image(image1);
 % Find the imaging area
 sensor = threshold(sensorIm, 'background');
+%sensor = threshold(sensorIm, 'fixed', 200);
 % Sensor needs removing areas around the edges, where the signal is a bit
 % weak
 sensor = erosion(sensor, 11);
@@ -65,7 +84,7 @@ peakPosNO(isoutlier(peakPos, 'movmedian', 9, 'ThresholdFactor', 5)) = NaN;
 
 %% Fit the IRFshift the with a 2D polynomials and get the residuals
 % Create a figure
-figure('Units', 'Normalized', 'Outerposition', [0 0 1 1])
+figure('WindowState', 'maximized')
 % XY coordinates
 XYcoord = [Xmat(~isnan(peakPosNO)), Ymat(~isnan(peakPosNO))];
 % Fitted shifts
@@ -186,6 +205,12 @@ for i = 1 : numel(hh)
     axes(ha(3, i)); %#ok<LAXES>
     title('Residual histogram')
     text(xl(2), yl(2), sprintf('Mean: %0.3f\nSTD: %0.3f', mean(get(hh(i), 'Data')), std(get(hh(i), 'Data'))), 'VerticalAlignment', 'top', 'HorizontalAlignment', 'right')
+    % Set the graph size right - not sure why it shrinks
+    refPos = get(ha(3, 1), 'Position');
+    curPos = get(ha(3, i), 'Position');
+    curPos(1) = curPos(1) + curPos(3) / 2 - refPos(3) / 2;
+    curPos(2 : 4) = refPos(2 : 4);
+    set(ha(3, i), 'Position', curPos);
 end
 
 print(gcf, input.fitFile, '-dpng')
@@ -202,7 +227,7 @@ for i = 1 : (nrModels - 1)
                    'PaperPosition', [0 0 24, 21], ...
                    'PaperSize', [24, 21]);
     mcpshift = MCPshift.(shiftModel{i}).offset;
-    mcpshift(~sensorGate) = NaN;
+    mcpshift(~sensor) = NaN;
     ha(4, i) = axes('FontSize', 16);
     hs(i) = surf(mcpshift, 'EdgeColor', 'none');
     view(2);
@@ -277,7 +302,7 @@ peakPos = IRFpeakFind(XYZimage(:, :, (input.TstartIRF : input.TendIRF) - input.T
                       sensor, ...
                       input);
 % Gate out the sensor part of the XYZ image stack
-XYZimage(~repmat(sensorGate, [1 1 size(XYZimage, 3)])) = 0;
+XYZimage(repmat(~sensor, [1 1 size(XYZimage, 3)])) = 0;
 % Use a X and Y sum projections of the XYZ stack to extract the IRF
 IRF = sum(sum(double(XYZimage), 1), 2);
 % Scale IRF to UINT16

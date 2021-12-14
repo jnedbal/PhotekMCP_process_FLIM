@@ -19,6 +19,10 @@ tic
 % Get the IRF
 IRFfile = ['/home/jakub/experiments/2020/201103_IRF/', ...
            'NKT_mag_74perc_9-75MHz_2998V_33kHz_3.5mmIris_1800s.gauss.mat'];
+IRFfile = ['/home/jakub/experiments/2020/201211_IRF/60xlowMag/', ...
+           '11-1MHz_71.5perc_55kHz_1800s_A.gauss.mat'];
+IRFfile = ['/home/jakub/experiments/2020/201211_IRF/60xhighMag/', ...
+           '11-1MHz_71.5perc_60kHz_1800s_A.gauss.mat'];
 load(IRFfile);
 
 %% Load FIFO data
@@ -36,6 +40,11 @@ wildcard = sprintf('%s/experiments/%s/', ...
 pathname = uigetdir(wildcard, 'Pick a Directory');
 % Find all files with *m1.spc in the subdirectories
 filenamelist = dir([pathname, filesep, '**', filesep, '*m1.spc']);
+% If the list is empty, try another attempt with repeated acquisition. This
+% is usually when the files are generated in repeats
+if isempty(filenamelist)
+    filenamelist = dir([pathname, filesep, '**', filesep, '*m1_c*.spc']);
+end
 % Check if the existing file is not provided
 if isequal(filenamelist, 0)
     return
@@ -46,7 +55,9 @@ end
 % bins to combine the photons
 binsX = input.Xstart : input.XYstep : input.Xend;
 binsY = input.Ystart : input.XYstep : input.Yend;
-    
+% Set the right limits for reading in the data
+input.Tstart = input.Tstart0;
+input.Tend = input.Tend0;
 
 % Create a projection stack
 stack3D = zeros(numel(binsY), numel(binsX), numel(filenamelist));

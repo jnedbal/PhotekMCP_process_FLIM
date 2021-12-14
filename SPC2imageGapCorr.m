@@ -6,13 +6,14 @@ if any(FIFO(1).gap) || any(FIFO(2).gap) || any(FIFO(3).gap)
                     'SPC2image', 'modal');
     % Find a pattern in the time differentials following the gaps
     if sum(FIFO(1).gap) ~= sum(FIFO(2).gap) || ...
-            sum(FIFO(1).gap) ~= sum(FIFO(3).gap)                    
+            sum(FIFO(1).gap) ~= sum(FIFO(3).gap)
         warndlg(['The gaps are not same on all three cards. ', ...
                          'Don''t know what to do!'], ...
                         'SPC2image', 'modal');
     else
         % Indices of the gaps in the streams
         gi = [find(FIFO(1).gap); find(FIFO(2).gap); find(FIFO(3).gap)];
+        % There seem to the a problem, where the gap appears right at the 
         for i = 1 : size(gi, 2)
             % Look for the pattern in the delays between the photons in the
             % 1000 photons past the gap

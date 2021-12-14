@@ -7,13 +7,14 @@ global pixIndex
 % Sensor gate
 %sensorGate = Cdist < sensorMeas.Radius(3);
 sensorGate = flipud(logical(sensor));
+sensorGate = logical(sensor);
+
 % Run through the pixels of the sensor
 sensorPix = find(sensorGate)';
 % Number of sensor pixels
 totalPix = numel(sensorPix);
 
-%% Run the lifetime fit for pixels with more that 10 photons
-%  reshape XYZ image into an array where the first dimension is the time
+%% Reshape XYZ image into an array where the first dimension is the time
 %  and the other dimensions are all the pixels
 TPimage = reshape(XYZimage, ...
                   size(XYZimage, 1) * size(XYZimage, 2), ...
@@ -117,9 +118,9 @@ switch input.type
             pixIn = sensorPix(i);
             % Calculate the shift of the IRF in the pixel compared to the
             % average IRF
-            peakPos(pixIn) = findshift(avgTrace, ...
-                                           squeeze(IRFtraces(i - 1, :)),...
-                                           'iter');
+            peakPos(pixIn) = findshift(squeeze(IRFtraces(i - 1, :)), ...
+                                       avgTrace, ...
+                                       'iter');
         end
     case 'exGauss'
         for i = 1 : numel(sensorPix)

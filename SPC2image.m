@@ -21,7 +21,7 @@ assert(isstruct(input), 'Input needs to be a struct');
 
 %  Shift of the macrotime
 if ~isfield(input, 'shift')
-    input.shift = 3;
+    input.shift = 4;
 end
 
 % First coordinate for the X axis
@@ -162,9 +162,9 @@ if any([FIFO(1).gap(1), FIFO(2).gap(1), FIFO(3).gap(1)])
     intensityImage = NaN(numel(input.Ybins), numel(input.Xbins));
 end
 
-% Look for gaps in the FIFO data stream and try to reconsittute the
+% Look for gaps in the FIFO data stream and try to reconstitute the
 % macrotime data stream after the gaps
-SPC2imageGapCorr;
+SPC2imageGapCorrNew;
 
 % Get rid of data that is not needed to save memory
 FIFO = rmfield(FIFO, {'rout', 'gap', 'mtov'});
@@ -183,7 +183,7 @@ for i = 1 : numel(frameBlocks)
     input.outputStackName{i, 1} = ...
         [input.outputStackName{i}(1 : end - 7), ...
          sprintf('.%03d_%ds-%ds.mat', ...
-                 i - 1, ...
+                 i - 1, ...MC
                  round(frameBlocks(i)), ...
                  round(min(frameBlocks(i) + input.frameTime, ...
                            FIFO(1).macroT(end) * FIFO(1).MTC)))];
@@ -248,7 +248,16 @@ for frame = 1 : numel(frameBlocks)
                       numel(input.Tbins)], 'uint16');
 
     % Convert the microtime into an addressable bin coordinate
-    binZ = bitshift(FIFO(1).microT(I1), -log2(input.Tstep)) + 1;
+    % Have two cases to save time and memory
+    if numel(frameBlocks) == 1
+        % Use the whole FIFO data
+        binZ = bitshift(FIFO(1).microT(I1), -log2(input.Tstep)) + 1;
+    else
+        % Only run the analysis on the frameBlock subset of microtimes
+        microTtau = FIFO(1).microT(frameIndex);
+        binZ = bitshift(microTtau(I1), -log2(input.Tstep)) + 1;
+        clear microTtau;
+    end
 
     % Make all values above the upper range of Tend zero (0)
     binZ(binZ > input.Tend) = 0;
