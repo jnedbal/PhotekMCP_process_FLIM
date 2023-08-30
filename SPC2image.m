@@ -21,7 +21,7 @@ assert(isstruct(input), 'Input needs to be a struct');
 
 %  Shift of the macrotime
 if ~isfield(input, 'shift')
-    input.shift = 4;
+    input.shift = 5;
 end
 
 % First coordinate for the X axis
@@ -197,6 +197,7 @@ if nargout > 2
 end
 % Assemble a 3D matrix of individual frames
 for frame = 1 : numel(frameBlocks)
+    disp(frame)
     %% Expand the second channel of the FIFO data.
     %  This is required because the FIFO macrotime from the different cards
     %  shows relative offset to each other. This means that not simple
@@ -312,7 +313,7 @@ for frame = 1 : numel(frameBlocks)
         % Calculate the range of the histogram in seconds
         range = size(XYZimage, 3) * binWidth;
         % Save the ICS file
-        exportICS2(XYZimage, ...
+        exportICS3(XYZimage, ...
                    input.outputStackName{frame, 2}, ...
                    range, ...
                    binWidth * 1e12);

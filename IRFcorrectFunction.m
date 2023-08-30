@@ -9,7 +9,9 @@
 %filename = '/home/jakub/experiments/2020/201211_IRF/60xlowMag/11-1MHz_71.5perc_55kHz_1800s_A_m1.spc';
 %filename = '/home/jakub/experiments/2020/201211_IRF/60xhighMag/11-1MHz_71.5perc_60kHz_1800s_A_m1.spc';
 %filename = '/home/jakub/experiments/2020/201211_IRF/90xhighMag/11-1MHz_72.5perc_60kHz_1800s_A_m1.spc';
-filename = '/home/jakub/experiments/2021/210903_IRF/MCP/loMag_FITC/11-14MHz_70-4perc_60x_loMag_f100mm_80kHz_FITC_filter_FITC_1800s_A_m1.spc';
+%filename = '/home/jakub/experiments/2021/210903_IRF/MCP/loMag_FITC/11-14MHz_70-4perc_60x_loMag_f100mm_80kHz_FITC_filter_FITC_1800s_A_m1.spc';
+filename = '/home/jakub/experiments/2021/210903_IRF/MCP/hiMag_FITC/11-14MHz_71-1perc_60x_hiMag_f100mm_80kHz_FITC_filter_FITC_1800s_A_m1.spc';
+
 input.frameTime = Inf;
 
 % Model type: gauss, exGauss, shift
@@ -27,13 +29,14 @@ input.TendIRF = 2159;
 % NKT 11.1MHz lowMag
 input.Tstart0 = 2900;
 input.Tend0 = 3799;
-input.TstartIRF = 3000;
-input.TendIRF = 3079;
+input.TstartIRF = 3285;   % input.TstartIRF = 3000;
+input.TedIRF = 3314;      % input.TendIRF = 3079;
 % NKT 11.1MHz highMag
-input.Tstart0 = 2900;
-input.Tend0 = 3799;
-input.TstartIRF = 3085;
-input.TendIRF = 3164;
+%input.Tstart0 = 2900;
+%input.Tend0 = 3799;
+%input.TstartIRF = 3085;
+%input.TendIRF = 3164;
+
 
 %input.Tstart = 1535;
 %input.Tend = 1634;
@@ -52,6 +55,9 @@ input.IRFcorrPeakFile = [input.IRFfile(1 : end - 3), 'corrPeak.png'];
 
 % Make a time-projection of the IRF dataset
 image1 = sum(XYZimage, 3);
+
+% Calculate how many picoseconds per bin
+bin2ps = diff(param.tac([1, 2])) * 1000;
 
 sensorIm = dip_image(image1);
 % Find the imaging area
@@ -115,14 +121,18 @@ for i = 1 : (nrModels - 1)
     end
 end
 for i = 1 : nrModels
-    if i == 1
+   if i == 1
         ha(1, 1) = subplot(3, nrModels, 1);
-        surf(peakPos, 'EdgeColor', 'none')
+        surf(peakPos * bin2ps, 'EdgeColor', 'none')
         zl1 = get(ha(1, 1), 'ZLim');
         cl1 = get(ha(1, 1), 'CLim');
         title('IRF Shift')
+        zlabel([char(916), ' Microtime [ps]'])
+        xlabel('X Coordinate')
+        ylabel('Y Coordinate')
         ha(3, 1) = subplot(3, nrModels, 2 * nrModels + 1);
-        hh(1) = histogram(peakPosNO(~isnan(peakPosNO)));
+        hh(1) = histogram(peakPosNO(~isnan(peakPosNO)) * bin2ps);
+        xlabel([char(916), ' Microtime [ps]'])
     else
         % surface fit
         sf = fit(XYcoord, Zshifts, shiftModel{i - 1}, 'Normalize', 'on');
@@ -132,9 +142,12 @@ for i = 1 : nrModels
         MCPshift.(shiftModel{i - 1}).offset = sf(Xmat, Ymat);
         ha(1, i) = subplot(3, nrModels, i);
         plot(sf)%, [Xmat(~isnan(IRFshift)), Ymat(~isnan(IRFshift))], IRFshift(~isnan(IRFshift)))
+        % Correct the shift from bins to picoseconds
+        set(get(gca, 'Children'), 'ZData', ...
+            get(get(gca, 'Children'), 'ZData') * bin2ps)
         hold on
         % Plot the surface of the calculated IRF shift
-        surf(peakPos, 'EdgeColor', 'none')
+        surf(peakPos * bin2ps, 'EdgeColor', 'none')
         % Give a title to the plot
         title(MCPshift.(shiftModel{i - 1}).name)
         % Create a plot of the residuals
@@ -145,18 +158,23 @@ for i = 1 : nrModels
                      Ymat(~isnan(peakPosNO))) - Zshifts;
         dImage = NaN(size(peakPos));
         dImage(~isnan(peakPosNO)) = dShifts;
-        surf(dImage, 'EdgeColor', 'none')
+        surf(dImage * bin2ps, 'EdgeColor', 'none')
         title('Residual')
+        if i == 2
+            zlabel([char(916), ' Microtime [ps]'])
+            xlabel('X Coordinate')
+            ylabel('Y Coordinate')
+        end
         % Calculate the errors of the fit
         MCPshift.(shiftModel{i - 1}).error.mean = mean(dShifts);
         MCPshift.(shiftModel{i - 1}).error.std = std(dShifts);
         % Plot the histogram of differences
         ha(3, i) = subplot(3, nrModels, 2 * nrModels + i);
-        hh(i) = histogram(dShifts(:));
+        hh(i) = histogram(dShifts(:) * bin2ps);
     end
 end
 
-% Adapt the scales
+%% Adapt the scales
 % Top row
 xl = cell2mat(get(ha(1, :), 'XLim'));
 xl = [max(xl(:, 1)), min(xl(:, 2))];
@@ -215,50 +233,9 @@ end
 
 print(gcf, input.fitFile, '-dpng')
 
-%% Create shift masks
+%% Create images of models
 hf = zeros(1, nrModels + 2);
 hs = hf;
-cl = [Inf, -Inf];
-input.MCPfitFile = cell(1, nrModels - 1);
-for i = 1 : (nrModels - 1)
-    hf(i) = figure('Units', 'pixels', ...
-                   'Position', [10, 10, 800, 700], ...
-                   'PaperUnits', 'centimeter', ...
-                   'PaperPosition', [0 0 24, 21], ...
-                   'PaperSize', [24, 21]);
-    mcpshift = MCPshift.(shiftModel{i}).offset;
-    mcpshift(~sensor) = NaN;
-    ha(4, i) = axes('FontSize', 16);
-    hs(i) = surf(mcpshift, 'EdgeColor', 'none');
-    view(2);
-    ha(5, i) = colorbar;
-    box on
-    axis equal
-    title(MCPshift.(shiftModel{i}).name)
-    xlabel('X pixel');
-    ylabel('Y pixel');
-    set(ha(4, i), 'XLim', [0, size(image1, 2)]);
-    set(ha(4, i), 'YLim', [0, size(image1, 1)]);
-    set(get(ha(5, i), 'Label'), 'String', 'IRF Timing Skew [bins]', ...
-                                'FontSize', get(ha(4, i), 'FontSize'));
-    cl(1) = min([cl(1), get(ha(5, i), 'Limits')]);
-    cl(2) = max([cl(2), get(ha(5, i), 'Limits')]);
-    input.MCPfitFile{1, i} = [input.fitFile(1 : end - 3), ...
-                              shiftModel{i}, '.bin.png'];
-    input.MCPfitFile{2, i} = [input.fitFile(1 : end - 3), ...
-                              shiftModel{i}, '.time.png'];
-end
-set(ha(4, 1 : (nrModels - 1)), 'ZLim', cl, 'CLim', cl)
-bin2ps = diff(param.tac([1, 2])) * 1000;
-cl = cl * bin2ps;
-for i = 1 : (nrModels - 1)
-    print(hf(i), input.MCPfitFile{1, i}, '-dpng')
-    set(get(ha(5, i), 'Label'), 'String', 'IRF Timing Skew [ps]');
-    set(hs(i), 'ZData', get(hs(i), 'Zdata') * bin2ps)
-    set(ha(4, i), 'ZLim', cl, 'CLim', cl)
-    set(ha(5, i), 'Limits', cl)
-    print(hf(i), input.MCPfitFile{2, i}, '-dpng')
-end
 
 %% Create a figure of the IRF peak position
 hf(end - 1) = figure('Units', 'pixels', ...
@@ -282,12 +259,67 @@ xlabel('X pixel');
 ylabel('Y pixel');
 set(ha(6, 1), 'XLim', [0, size(image1, 2)]);
 set(ha(6, 1), 'YLim', [0, size(image1, 1)]);
-set(ha(6, 1), 'CLim', 5 * peakPosMad * [-1, 1]);
+set(ha(6, 1), 'CLim', 4 * peakPosMad * [-1, 1]);
 set(get(ha(6, 2), 'Label'), 'String', 'IRF Timing Skew [ps]', ...
                             'FontSize', get(ha(6, 1), 'FontSize'));
+
+
+
+
+
+%% Create shift masks
+cl = [Inf, -Inf];
+input.MCPfitFile = cell(1, nrModels - 1);
+for i = 1 : (nrModels - 1)
+    hf(i) = figure('Units', 'pixels', ...
+                   'Position', [10, 10, 800, 700], ...
+                   'PaperUnits', 'centimeter', ...
+                   'PaperPosition', [0 0 24, 21], ...
+                   'PaperSize', [24, 21]);
+    mcpshift = MCPshift.(shiftModel{i}).offset;
+    mcpshift(~sensor) = NaN;
+    ha(4, i) = axes('FontSize', 16);
+    hs(i) = surf(mcpshift, 'EdgeColor', 'none');
+    view(2);
+    ha(5, i) = colorbar;
+    box on
+    axis equal
+    set(ha(4, i), 'FontSize', 16)
+    title(MCPshift.(shiftModel{i}).name)
+    xlabel('X pixel');
+    ylabel('Y pixel');
+    set(ha(4, i), 'XLim', [0, size(image1, 2)]);
+    set(ha(4, i), 'YLim', [0, size(image1, 1)]);
+    set(get(ha(5, i), 'Label'), 'String', 'IRF Timing Skew [bins]', ...
+                                'FontSize', get(ha(4, i), 'FontSize'));
+    cl(1) = min([cl(1), get(ha(5, i), 'Limits')]);
+    cl(2) = max([cl(2), get(ha(5, i), 'Limits')]);
+    input.MCPfitFile{1, i} = [input.fitFile(1 : end - 3), ...
+                              shiftModel{i}, '.bin.png'];
+    input.MCPfitFile{2, i} = [input.fitFile(1 : end - 3), ...
+                              shiftModel{i}, '.time.png'];
+end
+
+cl(1) = min([cl(1), get(ha(6, 1), 'Clim') / bin2ps]);
+cl(2) = max([cl(2), get(ha(6, 1), 'Clim') / bin2ps]);
+
+set(ha(4, 1 : (nrModels - 1)), 'ZLim', cl, 'CLim', cl)
+cl = cl * bin2ps;
+set(ha(6, 1), 'ZLim', cl, 'CLim', cl)
+
+%for i = 1 : (nrModels - 1)
+for i = 1 : nrModels - 1
+    print(hf(i), input.MCPfitFile{1, i}, '-dpng')
+    set(get(ha(5, i), 'Label'), 'String', 'IRF Timing Skew [ps]');
+    set(hs(i), 'ZData', get(hs(i), 'Zdata') * bin2ps)
+    set(ha(4, i), 'ZLim', cl, 'CLim', cl)
+    set(ha(5, i), 'Limits', cl)
+    print(hf(i), input.MCPfitFile{2, i}, '-dpng')
+end
+
 print(hf(end - 1), input.IRFrawPeakFile, '-dpng')
 
-% Save the IRF file
+%% Save the IRF file
 save(input.IRFfile, 'MCPshift', 'input')
 
 %% Run the MCP shift correction on the same IRF data to obtain a corrected
@@ -310,10 +342,10 @@ IRF = IRF / max(IRF) * double(intmax('uint16'));
 % TAC bin width
 binWidth = diff(param.tac([1, 2]));
 % Save the IRF
-saveIRF(IRF, [1 1], input.IRFicsFile, binWidth)
+%saveIRF(IRF, [1 1], input.IRFicsFile, binWidth)
 
 % Save the IRF file
-save(input.IRFfile, '-append', 'IRF')
+%save(input.IRFfile, '-append', 'IRF')
 
 
 
@@ -342,4 +374,4 @@ set(ha(6, 3), 'YLim', [0, size(image1, 1)]);
 set(ha(6, 3), 'CLim', get(ha(6, 1), 'CLim'))
 set(get(ha(6, 4), 'Label'), 'String', 'IRF Timing Skew [ps]', ...
                             'FontSize', get(ha(6, 3), 'FontSize'));
-print(hf(end), input.IRFcorrPeakFile, '-dpng')
+%print(hf(end), input.IRFcorrPeakFile, '-dpng')
