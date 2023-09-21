@@ -210,10 +210,19 @@ for frame = 1 : numel(frameBlocks)
     frameIndex = frameBlocks(frame) / FIFO(1).MTC <= FIFO(1).macroT & ...
                  FIFO(1).macroT < (frameBlocks(frame) + input.frameTime) / FIFO(1).MTC;
 
-    %  Create a matrix of fifo(2) macrotimes that is up to a few (shift) 
+    % Check the macrotime range is no less than half of input.frameTime.
+    % The last frame tends to contain very few photons and end up causing
+    % errors later when the FLIM fitting cannot be done on near-empty 
+    % histograms.
+    selMacroT1 = FIFO(1).macroT(frameIndex);
+    if diff(selMacroT1([1 end])) * FIFO(1).MTC < input.frameTime / 2
+        break
+    end
+
+    %  Create a matrix of fifo(1) macrotimes that is up to a few (shift) 
     %  values smaller and larger than the origininal one to look for
     %  intersections with the other fifo macrotimes.
-    mT1 = repmat(FIFO(1).macroT(frameIndex), 2 * input.shift + 1, 1) + ...
+    mT1 = repmat(selMacroT1, 2 * input.shift + 1, 1) + ...
           (-input.shift : input.shift)';
 
     %  Intersect the expanded fifo(1) macrotime matrix with the fifo(2)
